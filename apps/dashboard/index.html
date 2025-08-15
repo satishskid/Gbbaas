@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BAAS Admin Dashboard</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #333; }
+        h1, h2 { border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+        .container { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, textarea { width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
+        button { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #eee; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+
+    <h1>BAAS Admin Dashboard</h1>
+
+    <div class="container">
+        <h2>Configuration</h2>
+        <label for="apiBase">API Base URL:</label>
+        <input type="text" id="apiBase" value="http://127.0.0.1:8787">
+        <label for="adminSecret">Admin Secret:</label>
+        <input type="password" id="adminSecret" placeholder="Enter your admin secret">
+    </div>
+
+    <div class="container">
+        <h2>Create Agency</h2>
+        <form id="createAgencyForm">
+            <label for="agencyId">Agency ID:</label>
+            <input type="text" id="agencyId" required>
+            <label for="agencyName">Agency Name:</label>
+            <input type="text" id="agencyName">
+            <label for="seatQuota">Seat Quota:</label>
+            <input type="number" id="seatQuota" value="10" required>
+            <button type="submit">Create Agency</button>
+        </form>
+    </div>
+
+    <div class="container">
+        <h2>Issue Licenses</h2>
+        <form id="issueLicenseForm">
+            <label for="projectId">Project ID:</label>
+            <input type="text" id="projectId" value="my-awesome-app" required>
+            <label for="licenseType">Type (seat/individual):</label>
+            <input type="text" id="licenseType" value="seat" required>
+            <label for="licenseAgencyId">Agency ID (if type=seat):</label>
+            <input type="text" id="licenseAgencyId">
+            <label for="seats">Seats:</label>
+            <input type="number" id="seats" value="1" required>
+            <label for="durationDays">Duration (Days):</label>
+            <input type="number" id="durationDays" value="365" required>
+            <label for="quotas">Quotas (JSON):</label>
+            <textarea id="quotas">{ "daily": 1000, "byCategory": { "ai": { "daily": 50 } } }</textarea>
+            <button type="submit">Issue Licenses</button>
+        </form>
+    </div>
+
+    <div class="container">
+        <h2>Revoke License</h2>
+        <form id="revokeLicenseForm">
+            <label for="jti">License JTI to Revoke:</label>
+            <input type="text" id="jti" required>
+            <button type="submit">Revoke</button>
+        </form>
+    </div>
+
+    <div class="container">
+        <h2>View Agency Summary</h2>
+        <form id="viewSummaryForm">
+            <label for="summaryAgencyId">Agency ID:</label>
+            <input type="text" id="summaryAgencyId" required>
+            <button type="submit">Get Summary</button>
+        </form>
+    </div>
+
+    <div class="container">
+        <h2>API Response</h2>
+        <pre id="apiResponse">...</pre>
+    </div>
+
+    <script>
+        const getHeaders = () => ({
+            'Content-Type': 'application/json',
+            'X-Admin-Secret': document.getElementById('adminSecret').value
+        });
+
+        const apiCall = async (endpoint, body) => {
+            const apiBase = document.getElementById('apiBase').value;
+            const responseEl = document.getElementById('apiResponse');
+            try {
+                const response = await fetch(`${apiBase}${endpoint}`, {
+                    method: body ? 'POST' : 'GET',
+                    headers: getHeaders(),
+                    body: body ? JSON.stringify(body) : null
+                });
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                responseEl.textContent = `Error: ${err.message}`;
+            }
+        };
+
+        document.getElementById('createAgencyForm').addEventListener('submit', e => {
+            e.preventDefault();
+            apiCall('/admin/agencies/create', {
+                agencyId: e.target.agencyId.value,
+                name: e.target.agencyName.value,
+                seatQuota: parseInt(e.target.seatQuota.value)
+            });
+        });
+
+        document.getElementById('issueLicenseForm').addEventListener('submit', e => {
+            e.preventDefault();
+            apiCall('/admin/licenses/issue', {
+                projectId: e.target.projectId.value,
+                type: e.target.licenseType.value,
+                agencyId: e.target.licenseAgencyId.value,
+                seats: parseInt(e.target.seats.value),
+                durationDays: parseInt(e.target.durationDays.value),
+                quotas: JSON.parse(e.target.quotas.value)
+            });
+        });
+
+        document.getElementById('revokeLicenseForm').addEventListener('submit', e => {
+            e.preventDefault();
+            apiCall('/admin/licenses/revoke', { jti: e.target.jti.value });
+        });
+
+        document.getElementById('viewSummaryForm').addEventListener('submit', e => {
+            e.preventDefault();
+            apiCall(`/admin/analytics/summary?agencyId=${e.target.summaryAgencyId.value}`);
+        });
+    </script>
+
+</body>
+</html>

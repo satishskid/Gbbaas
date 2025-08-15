@@ -1,0 +1,13 @@
+account_id = "9f4998a66a5d7bd7a230d0222544fbe6"
+name = "baas-api"
+main = "apps/baas-api/worker.js"
+compatibility_date = "2023-10-30"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baas-db"
+database_id = "e1ac45c9-fe10-4a08-8ca6-6e83be14b74b"
+
+[vars]
+PUBLIC_BASE_URL = "https://baas-api.satish-9f4.workers.dev" # <-- TODO: Replace with your worker URL
+ALLOWED_ORIGINS = "http://localhost:3000,https://your-app.com" # <-- TODO: Replace with your app's origins
