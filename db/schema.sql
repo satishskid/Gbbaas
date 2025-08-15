@@ -5,6 +5,9 @@ DROP TABLE IF EXISTS activations;
 DROP TABLE IF EXISTS activation_sessions;
 DROP TABLE IF EXISTS licenses;
 DROP TABLE IF EXISTS agencies;
+DROP TABLE IF EXISTS coupon_codes;
+DROP TABLE IF EXISTS trial_plans;
+DROP TABLE IF EXISTS trial_redemptions;
 
 CREATE TABLE agencies (
     agency_id TEXT PRIMARY KEY,
@@ -74,4 +77,20 @@ CREATE TABLE coupon_codes (
     current_uses INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     expires_at INTEGER
+);
+
+-- Default trial plans for projects for self-service signups
+CREATE TABLE trial_plans (
+    project_id TEXT PRIMARY KEY,
+    duration_days INTEGER NOT NULL,
+    quotas_json TEXT NOT NULL
+);
+
+-- Tracks which user has redeemed a self-service trial for which project
+CREATE TABLE trial_redemptions (
+    user_email TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    license_jti TEXT NOT NULL,
+    redeemed_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    PRIMARY KEY (user_email, project_id)
 );

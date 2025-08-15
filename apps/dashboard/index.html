@@ -150,6 +150,26 @@
         </div>
 
         <div class="container">
+            <h2>Define Self-Service Trial Plan</h2>
+            <form id="defineTrialForm">
+                <label for="trialProjectId">Project ID</label>
+                <input type="text" id="trialProjectId" placeholder="e.g., geminix" required>
+                <p class="help-text">The unique ID of the project you want to set a trial for.</p>
+
+                <label for="trialDurationDays">Trial Duration (Days)</label>
+                <input type="number" id="trialDurationDays" value="7" required>
+                <p class="help-text">How long the self-service trial will last.</p>
+
+                <label for="trialQuotas">Trial Quotas (JSON)</label>
+                <textarea id="trialQuotas" rows="4">{ "daily": 100 }</textarea>
+                <p class="help-text">API limits for users who sign up for this trial.</p>
+
+                <button type="submit">Set Trial Plan</button>
+            </form>
+            <p class="help-text" style="margin-top: 1rem;">This sets the default trial that users will receive when they sign up via the 'One-Click' flow.</p>
+        </div>
+
+        <div class="container">
             <h2>Issue Individual License</h2>
             <form id="issueIndividualLicenseForm">
                 <label for="plan">Select a Plan (to pre-fill)</label>
@@ -212,7 +232,6 @@
 
                 <button type="submit">Create Coupon</button>
             </form>
-             <p class="help-text" style="margin-top: 1rem;"><b>Note:</b> This is a UI placeholder. The backend API needs to be built to make coupon creation and redemption functional.</p>
         </div>
 
         <div class="container">
@@ -268,7 +287,6 @@
     </main>
 
     <script>
-        // Same JavaScript as before, with a new event listener for the coupon form
         const getHeaders = () => ({
             'Content-Type': 'application/json',
             'X-Admin-Secret': document.getElementById('adminSecret').value
@@ -322,16 +340,7 @@
 
             if (data && data.tokens) {
                 const licenseKey = data.tokens[0];
-                const emailBody = `Hello ${userEmail},
-
-Welcome! Here is your license key for ${projectId}:
-
-${licenseKey}
-
-To activate your license, please follow the instructions in our application.
-
-Thanks,
-The Team`;
+                const emailBody = `Hello ${userEmail},\n\nWelcome! Here is your license key for ${projectId}:\n\n${licenseKey}\n\nTo activate your license, please follow the instructions in our application.\n\nThanks,\nThe Team`;
                 document.getElementById('emailBody').value = emailBody;
                 document.getElementById('emailContainer').classList.remove('hidden');
             }
@@ -339,24 +348,29 @@ The Team`;
         
         document.getElementById('createCouponForm').addEventListener('submit', e => {
             e.preventDefault();
-            // This is a placeholder for the API call to create a coupon
-            document.getElementById('apiResponse').textContent = `// TODO: Implement API call to create coupon with these details:
-${JSON.stringify({
+            apiCall('/admin/coupons/create', {
                 code: e.target.couponCode.value,
                 projectId: e.target.couponProjectId.value,
                 durationDays: parseInt(e.target.couponDurationDays.value),
                 quotas: JSON.parse(e.target.couponQuotas.value),
                 maxUses: parseInt(e.target.couponMaxUses.value)
-            }, null, 2)}`;
+            });
+        });
+
+        document.getElementById('defineTrialForm').addEventListener('submit', e => {
+            e.preventDefault();
+            apiCall('/admin/trials/define', {
+                projectId: e.target.trialProjectId.value,
+                durationDays: parseInt(e.target.trialDurationDays.value),
+                quotas: JSON.parse(e.target.trialQuotas.value)
+            });
         });
 
         document.getElementById('findUserForm').addEventListener('submit', e => {
             e.preventDefault();
             const userEmail = e.target.findUserEmail.value;
             const jti = e.target.findUserJti.value;
-            document.getElementById('userDetails').textContent = `// TODO: Implement API call to fetch details for
-// Email: ${userEmail || 'N/A'}
-// JTI: ${jti || 'N/A'}`;
+            document.getElementById('userDetails').textContent = `// TODO: Implement API call to fetch details for\n// Email: ${userEmail || 'N/A'}\n// JTI: ${jti || 'N/A'}`;
         });
 
         // Agency Forms

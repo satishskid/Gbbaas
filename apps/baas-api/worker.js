@@ -265,6 +265,52 @@ router.post('/v1/coupons/redeem', async (request, env) => {
     return jsonResponse({ licenseToken: token }, 200, env);
 });
 
+// 7. POST /v1/trials/request
+router.post('/v1/trials/request', async (request, env) => {
+    const { projectId, userEmail } = await request.json();
+
+    if (!projectId || !userEmail) {
+        return jsonResponse({ error: 'projectId and userEmail are required.' }, 400, env);
+    }
+
+    // Check if user has already redeemed a trial for this project
+    const existingRedemption = await env.DB.prepare("SELECT * FROM trial_redemptions WHERE user_email = ?1 AND project_id = ?2").bind(userEmail, projectId).first();
+    if (existingRedemption) {
+        return jsonResponse({ error: 'A trial has already been redeemed for this user and project.' }, 403, env);
+    }
+
+    // Get the default trial plan for this project
+    const trialPlan = await env.DB.prepare("SELECT * FROM trial_plans WHERE project_id = ?1").bind(projectId).first();
+    if (!trialPlan) {
+        return jsonResponse({ error: 'No trial plan is configured for this project.' }, 404, env);
+    }
+
+    // Issue the license
+    const { duration_days, quotas_json } = trialPlan;
+    const quotas = JSON.parse(quotas_json);
+    const jti = crypto.randomUUID();
+    const exp = Math.floor(Date.now() / 1000) + (duration_days * 24 * 60 * 60);
+    const privateJwk = JSON.parse(env.PRIVATE_JWK);
+
+    await env.DB.prepare(
+        "INSERT INTO licenses (jti, project_id, type, quotas, exp) VALUES (?1, ?2, 'individual', ?3, ?4)"
+    ).bind(jti, projectId, JSON.stringify(quotas), exp).run();
+
+    // Record the redemption
+    await env.DB.prepare(
+        "INSERT INTO trial_redemptions (user_email, project_id, license_jti) VALUES (?1, ?2, ?3)"
+    ).bind(userEmail, projectId, jti).run();
+
+    const token = await signJwt({
+        aud: projectId,
+        jti,
+        type: 'individual',
+        exp,
+    }, privateJwk, env);
+
+    return jsonResponse({ licenseToken: token }, 200, env);
+});
+
 
 // --- ADMIN ENDPOINTS ---
 
@@ -384,6 +430,23 @@ router.post('/admin/coupons/create', adminAuth, async (request, env) => {
     ).bind(code, projectId, plan_details_json, maxUses, expiresAt || null).run();
 
     return jsonResponse({ ok: true, code }, 201, env);
+});
+
+// 6. POST /admin/trials/define
+router.post('/admin/trials/define', adminAuth, async (request, env) => {
+    const { projectId, durationDays, quotas } = await request.json();
+
+    if (!projectId || !durationDays || !quotas) {
+        return jsonResponse({ error: 'Missing required fields.' }, 400, env);
+    }
+
+    const quotas_json = JSON.stringify(quotas);
+
+    await env.DB.prepare(
+        "INSERT INTO trial_plans (project_id, duration_days, quotas_json) VALUES (?1, ?2, ?3) ON CONFLICT(project_id) DO UPDATE SET duration_days=excluded.duration_days, quotas_json=excluded.quotas_json"
+    ).bind(projectId, durationDays, quotas_json).run();
+
+    return jsonResponse({ ok: true, projectId }, 201, env);
 });
 
 
