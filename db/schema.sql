@@ -64,3 +64,14 @@ CREATE TABLE users_seen (
     ts INTEGER DEFAULT (strftime('%s', 'now')),
     UNIQUE(jti, device_id, user_hash)
 );
+
+-- Coupon codes for bulk license generation
+CREATE TABLE coupon_codes (
+    code TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    plan_details_json TEXT NOT NULL, -- Stores duration, quotas, etc.
+    max_uses INTEGER NOT NULL,
+    current_uses INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    expires_at INTEGER
+);

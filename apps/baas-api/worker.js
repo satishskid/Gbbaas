@@ -218,6 +218,53 @@ router.post('/v1/usage/meter', async (request, env) => {
     return jsonResponse({ allowed: true }, 200, env);
 });
 
+// 6. POST /v1/coupons/redeem
+router.post('/v1/coupons/redeem', async (request, env) => {
+    const { couponCode, projectId } = await request.json();
+
+    if (!couponCode || !projectId) {
+        return jsonResponse({ error: 'couponCode and projectId are required.' }, 400, env);
+    }
+
+    const coupon = await env.DB.prepare("SELECT * FROM coupon_codes WHERE code = ?1 AND project_id = ?2").bind(couponCode, projectId).first();
+
+    if (!coupon) {
+        return jsonResponse({ error: 'Invalid or expired coupon code.' }, 404, env);
+    }
+
+    if (coupon.current_uses >= coupon.max_uses) {
+        return jsonResponse({ error: 'This coupon has reached its maximum number of uses.' }, 403, env);
+    }
+
+    if (coupon.expires_at && coupon.expires_at * 1000 < Date.now()) {
+        return jsonResponse({ error: 'This coupon has expired.' }, 403, env);
+    }
+
+    // If the coupon is valid, issue a new license
+    const planDetails = JSON.parse(coupon.plan_details_json);
+    const { durationDays, quotas } = planDetails;
+
+    const jti = crypto.randomUUID();
+    const exp = Math.floor(Date.now() / 1000) + (durationDays * 24 * 60 * 60);
+    const privateJwk = JSON.parse(env.PRIVATE_JWK);
+
+    await env.DB.prepare(
+        "INSERT INTO licenses (jti, project_id, type, quotas, exp) VALUES (?1, ?2, 'individual', ?3, ?4)"
+    ).bind(jti, projectId, JSON.stringify(quotas), exp).run();
+
+    // Atomically increment the usage count
+    await env.DB.prepare("UPDATE coupon_codes SET current_uses = current_uses + 1 WHERE code = ?1").bind(couponCode).run();
+
+    const token = await signJwt({
+        aud: projectId,
+        jti,
+        type: 'individual',
+        exp,
+    }, privateJwk, env);
+
+    return jsonResponse({ licenseToken: token }, 200, env);
+});
+
 
 // --- ADMIN ENDPOINTS ---
 
@@ -320,6 +367,23 @@ router.get('/admin/analytics/summary', adminAuth, async (request, env) => {
     });
 
     return jsonResponse({ summary }, 200, env);
+});
+
+// 5. POST /admin/coupons/create
+router.post('/admin/coupons/create', adminAuth, async (request, env) => {
+    const { code, projectId, durationDays, quotas, maxUses, expiresAt } = await request.json();
+
+    if (!code || !projectId || !durationDays || !quotas || !maxUses) {
+        return jsonResponse({ error: 'Missing required fields.' }, 400, env);
+    }
+
+    const plan_details_json = JSON.stringify({ durationDays, quotas });
+
+    await env.DB.prepare(
+        "INSERT INTO coupon_codes (code, project_id, plan_details_json, max_uses, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)"
+    ).bind(code, projectId, plan_details_json, maxUses, expiresAt || null).run();
+
+    return jsonResponse({ ok: true, code }, 201, env);
 });
 
 
