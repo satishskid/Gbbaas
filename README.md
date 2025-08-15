@@ -153,3 +153,83 @@ If a metered request exceeds a quota, the API returns a `429 Too Many Requests` 
 -   **WebAuthn**: Device binding is handled by the browser's WebAuthn API, creating a strong, non-transferable link between a license and a device.
 -   **JWTs**: License tokens and activation certificates are signed with RS256. The public key is embedded in the SDK for client-side verification of license tokens.
 -   **No Content Collection**: The BAAS is fundamentally unaware of your application's content.
+
+## Dashboard Usage and Plan Configuration
+
+### Using the Admin Dashboard
+
+The admin dashboard (`apps/dashboard/index.html`) is a simple, self-contained HTML file that provides a user interface for managing your BAAS instance.
+
+1.  **Configuration**:
+    *   **API Base URL**: This is the full URL of your deployed Cloudflare Worker. For example: `https://baas-api.your-worker-name.workers.dev`.
+    *   **Admin Secret**: This is the secret you created and set using `wrangler secret put ADMIN_SECRET`.
+
+2.  **Create Agency**:
+    *   This form allows you to create a new agency.
+    *   **Agency ID**: A unique, URL-friendly identifier for the agency (e.g., `acme-corp`).
+    *   **Agency Name**: The full, human-readable name (e.g., "Acme Corporation").
+    *   **Seat Quota**: The maximum number of licenses that can be issued to this agency.
+
+3.  **Issue Licenses**:
+    *   This is where you create new licenses.
+    *   **Project ID**: An identifier for your application (e.g., `my-awesome-app`).
+    *   **Type**: Use `seat` for licenses that belong to an agency, or `individual` for standalone licenses.
+    *   **Agency ID**: If the type is `seat`, provide the `agencyId` this license belongs to.
+    *   **Number of Seats**: The number of licenses to create with these settings.
+    *   **Duration (Days)**: The number of days the license will be valid for after activation.
+    *   **Quotas (JSON)**: A JSON object defining the API usage limits.
+
+4.  **Revoke License**:
+    *   This allows you to disable a license.
+    *   **License JTI to Revoke**: The unique `jti` (JWT ID) of the license you want to revoke. You can get this from the response when you issue a license.
+
+5.  **View Agency Summary**:
+    *   This provides analytics for a specific agency.
+    *   **Agency ID**: The ID of the agency you want to view.
+
+### Configuring Plans (Free, Basic, Pro)
+
+The BAAS is "headless" and does not have built-in plan names like "Free" or "Pro". Instead, it provides the flexibility to create any kind of plan you want using **Duration** and **Quotas**. You define what a "Pro" plan means when you issue the license.
+
+Here’s how you would create different tiers using the **Issue Licenses** form:
+
+*   **To Create a "Free" Plan:**
+    *   **Duration (Days):** Set a short duration, like `14`.
+    *   **Quotas (JSON):** Set low API limits.
+        ```json
+        { "daily": 100 }
+        ```
+
+*   **To Create a "Basic" Plan:**
+    *   **Duration (Days):** Set a longer duration, like `365`.
+    *   **Quotas (JSON):** Set higher limits.
+        ```json
+        { "daily": 1000 }
+        ```
+
+*   **To Create an "Advanced/Pro" Plan:**
+    *   **Duration (Days):** `365`
+    *   **Quotas (JSON):** Set very high limits and use different buckets for different features. For example, you could give users 10,000 general requests but only 100 special "AI" requests per day.
+        ```json
+        {
+          "daily": 10000,
+          "byCategory": {
+            "ai": { "daily": 100 },
+            "general": { "daily": 9900 }
+          }
+        }
+        ```
+
+You would handle the logic for which user gets which plan in your main application's backend, and then call this admin API to issue the license with the correct settings.
+
+### Troubleshooting
+
+*   **403 Forbidden Error**:
+    *   Check that your `ADMIN_SECRET` is correct.
+    *   Ensure the `X-Admin-Secret` header is being sent correctly from the dashboard.
+*   **"Invalid JWT" or "Token verification failed"**:
+    *   Make sure the `PUBLIC_JWK_JSON` secret is set correctly in your worker and that the `PUBLIC_JWK` in `sdk/baas-sdk.js` matches.
+*   **429 Too Many Requests**:
+    *   This means a quota has been exceeded. Check the `apiResponse` in the dashboard for details on which limit was hit.
+*   **CORS Errors**:
+    *   Ensure that the `ALLOWED_ORIGINS` variable in your `wrangler.toml` includes the domain where you are running your application (and the dashboard, if you are running it from a different origin).

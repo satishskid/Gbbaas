@@ -1,18 +1,20 @@
-<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BAAS Admin Dashboard</title>
     <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #333; }
-        h1, h2 { border-bottom: 1px solid #ccc; padding-bottom: 10px; }
-        .container { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input, textarea { width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
-        button { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #222; background-color: #fdfdfd; }
+        h1, h2 { border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        .container { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #eee; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; }
+        input, textarea, select { width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
+        textarea { resize: vertical; min-height: 80px; }
+        button { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; }
         button:hover { background: #0056b3; }
-        pre { background: #eee; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+        pre { background: #f4f4f4; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; border: 1px solid #eee; }
+        .help-text { font-size: 0.85em; color: #666; margin-top: -5px; margin-bottom: 10px; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -22,41 +24,92 @@
     <div class="container">
         <h2>Configuration</h2>
         <label for="apiBase">API Base URL:</label>
-        <input type="text" id="apiBase" value="http://127.0.0.1:8787">
+        <input type="text" id="apiBase" value="https://baas-api.satish-9f4.workers.dev">
+        <p class="help-text">The full URL of your deployed worker.</p>
         <label for="adminSecret">Admin Secret:</label>
         <input type="password" id="adminSecret" placeholder="Enter your admin secret">
+        <p class="help-text">The secret you created with `wrangler secret put ADMIN_SECRET`.</p>
     </div>
 
     <div class="container">
-        <h2>Create Agency</h2>
-        <form id="createAgencyForm">
-            <label for="agencyId">Agency ID:</label>
-            <input type="text" id="agencyId" required>
-            <label for="agencyName">Agency Name:</label>
-            <input type="text" id="agencyName">
-            <label for="seatQuota">Seat Quota:</label>
-            <input type="number" id="seatQuota" value="10" required>
-            <button type="submit">Create Agency</button>
+        <h2>Issue Individual License</h2>
+        <form id="issueIndividualLicenseForm">
+            <label for="plan">Select a Plan (to pre-fill):</label>
+            <select id="plan" name="plan">
+                <option value="custom">Custom</option>
+                <option value="basic">Basic</option>
+                <option value="pro">Pro</option>
+                <option value="advanced">Advanced</option>
+            </select>
+            <p class="help-text">Choose a plan to start, or select "Custom" to define your own.</p>
+
+            <label for="userEmail">User Email:</label>
+            <input type="email" id="userEmail" required>
+            <p class="help-text">The email address of the user who will receive this license.</p>
+
+            <label for="individualProjectId">Project ID:</label>
+            <input type="text" id="individualProjectId" value="my-awesome-app" required>
+            <p class="help-text">The identifier for your application that will use this license.</p>
+
+            <label for="individualDurationDays">Duration (Days):</label>
+            <input type="number" id="individualDurationDays" value="365" required>
+            <p class="help-text">How many days this license will be valid for after activation.</p>
+
+            <label for="individualQuotas">Quotas (JSON):</label>
+            <textarea id="individualQuotas">{ "daily": 1000 }</textarea>
+            <p class="help-text">Define API limits. 'daily' is the overall limit. Use 'byCategory' for specific buckets.</p>
+
+            <button type="submit">Issue License</button>
         </form>
     </div>
 
+    <div class="container hidden" id="emailContainer">
+        <h2>Email for User</h2>
+        <p class="help-text">Copy and paste the following email to send the license to the user.</p>
+        <textarea id="emailBody" rows="10"></textarea>
+    </div>
+
     <div class="container">
-        <h2>Issue Licenses</h2>
-        <form id="issueLicenseForm">
-            <label for="projectId">Project ID:</label>
-            <input type="text" id="projectId" value="my-awesome-app" required>
-            <label for="licenseType">Type (seat/individual):</label>
-            <input type="text" id="licenseType" value="seat" required>
-            <label for="licenseAgencyId">Agency ID (if type=seat):</label>
-            <input type="text" id="licenseAgencyId">
-            <label for="seats">Seats:</label>
-            <input type="number" id="seats" value="1" required>
-            <label for="durationDays">Duration (Days):</label>
-            <input type="number" id="durationDays" value="365" required>
-            <label for="quotas">Quotas (JSON):</label>
-            <textarea id="quotas">{ "daily": 1000, "byCategory": { "ai": { "daily": 50 } } }</textarea>
-            <button type="submit">Issue Licenses</button>
+        <h2>User Analytics & Management</h2>
+        <form id="findUserForm">
+            <label for="findUserEmail">Find User by Email:</label>
+            <input type="email" id="findUserEmail">
+            <label for="findUserJti">Or by License JTI:</label>
+            <input type="text" id="findUserJti">
+            <button type="submit">Get User Details</button>
         </form>
+        <pre id="userDetails">...</pre>
+        <p class="help-text"><b>Note:</b> This is a placeholder. The backend API needs to be extended to support querying individual user analytics.</p>
+    </div>
+
+    <div class="container">
+        <h2>Agency Management</h2>
+        <details>
+            <summary>Expand for agency tools</summary>
+            <div id="agencyTools" style="margin-top: 15px;">
+                <h3>Create Agency</h3>
+                <form id="createAgencyForm">
+                    <label for="agencyId">Agency ID:</label>
+                    <input type="text" id="agencyId" required>
+                    <p class="help-text">A unique identifier for the agency (e.g., 'acme-corp').</p>
+                    <label for="agencyName">Agency Name:</label>
+                    <input type="text" id="agencyName">
+                    <p class="help-text">The full, human-readable name of the agency.</p>
+                    <label for="seatQuota">Seat Quota:</label>
+                    <input type="number" id="seatQuota" value="10" required>
+                    <p class="help-text">The total number of licenses this agency is allowed.</p>
+                    <button type="submit">Create Agency</button>
+                </form>
+                <hr style="margin: 20px 0;">
+                <h3>View Agency Summary</h3>
+                <form id="viewSummaryForm">
+                    <label for="summaryAgencyId">Agency ID:</label>
+                    <input type="text" id="summaryAgencyId" required>
+                    <p class="help-text">Enter the ID of the agency whose analytics you want to view.</p>
+                    <button type="submit">Get Summary</button>
+                </form>
+            </div>
+        </details>
     </div>
 
     <div class="container">
@@ -64,16 +117,8 @@
         <form id="revokeLicenseForm">
             <label for="jti">License JTI to Revoke:</label>
             <input type="text" id="jti" required>
+            <p class="help-text">The unique 'jti' of the license you want to disable.</p>
             <button type="submit">Revoke</button>
-        </form>
-    </div>
-
-    <div class="container">
-        <h2>View Agency Summary</h2>
-        <form id="viewSummaryForm">
-            <label for="summaryAgencyId">Agency ID:</label>
-            <input type="text" id="summaryAgencyId" required>
-            <button type="submit">Get Summary</button>
         </form>
     </div>
 
@@ -91,6 +136,7 @@
         const apiCall = async (endpoint, body) => {
             const apiBase = document.getElementById('apiBase').value;
             const responseEl = document.getElementById('apiResponse');
+            document.getElementById('emailContainer').classList.add('hidden');
             try {
                 const response = await fetch(`${apiBase}${endpoint}`, {
                     method: body ? 'POST' : 'GET',
@@ -99,11 +145,65 @@
                 });
                 const data = await response.json();
                 responseEl.textContent = JSON.stringify(data, null, 2);
+                return data; // Return data for further processing
             } catch (err) {
                 responseEl.textContent = `Error: ${err.message}`;
             }
         };
 
+        const plans = {
+            basic: { durationDays: 365, quotas: { daily: 1000 } },
+            pro: { durationDays: 365, quotas: { daily: 5000 } },
+            advanced: { durationDays: 365, quotas: { daily: 10000, byCategory: { ai: { daily: 100 } } } }
+        };
+
+        document.getElementById('plan').addEventListener('change', e => {
+            const planName = e.target.value;
+            if (plans[planName]) {
+                const selectedPlan = plans[planName];
+                document.getElementById('individualDurationDays').value = selectedPlan.durationDays;
+                document.getElementById('individualQuotas').value = JSON.stringify(selectedPlan.quotas, null, 2);
+            }
+        });
+
+        document.getElementById('issueIndividualLicenseForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const userEmail = e.target.userEmail.value;
+            const data = await apiCall('/admin/licenses/issue', {
+                projectId: e.target.individualProjectId.value,
+                type: 'individual',
+                userEmail: userEmail,
+                seats: 1,
+                durationDays: parseInt(e.target.individualDurationDays.value),
+                quotas: JSON.parse(e.target.individualQuotas.value)
+            });
+
+            if (data && data.tokens) {
+                const licenseKey = data.tokens[0];
+                const emailBody = `Hello ${userEmail},
+
+Welcome! Here is your license key for ${e.target.individualProjectId.value}:
+
+${licenseKey}
+
+To activate your license, please follow the instructions in our application.
+
+Thanks,
+The Team`;
+                document.getElementById('emailBody').value = emailBody;
+                document.getElementById('emailContainer').classList.remove('hidden');
+            }
+        });
+
+        document.getElementById('findUserForm').addEventListener('submit', e => {
+            e.preventDefault();
+            const userEmail = e.target.findUserEmail.value;
+            const jti = e.target.findUserJti.value;
+            // This is a placeholder for the API call to get user details
+            document.getElementById('userDetails').textContent = `// TODO: Implement API call to fetch details for\n// Email: ${userEmail || 'N/A'}\n// JTI: ${jti || 'N/A'}`;
+        });
+
+        // Agency Forms
         document.getElementById('createAgencyForm').addEventListener('submit', e => {
             e.preventDefault();
             apiCall('/admin/agencies/create', {
@@ -113,16 +213,9 @@
             });
         });
 
-        document.getElementById('issueLicenseForm').addEventListener('submit', e => {
+        document.getElementById('viewSummaryForm').addEventListener('submit', e => {
             e.preventDefault();
-            apiCall('/admin/licenses/issue', {
-                projectId: e.target.projectId.value,
-                type: e.target.licenseType.value,
-                agencyId: e.target.licenseAgencyId.value,
-                seats: parseInt(e.target.seats.value),
-                durationDays: parseInt(e.target.durationDays.value),
-                quotas: JSON.parse(e.target.quotas.value)
-            });
+            apiCall(`/admin/analytics/summary?agencyId=${e.target.summaryAgencyId.value}`);
         });
 
         document.getElementById('revokeLicenseForm').addEventListener('submit', e => {
@@ -130,10 +223,6 @@
             apiCall('/admin/licenses/revoke', { jti: e.target.jti.value });
         });
 
-        document.getElementById('viewSummaryForm').addEventListener('submit', e => {
-            e.preventDefault();
-            apiCall(`/admin/analytics/summary?agencyId=${e.target.summaryAgencyId.value}`);
-        });
     </script>
 
 </body>
