@@ -6,7 +6,7 @@
     <title>BAAS Admin Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
     <style>
         :root {
             --primary-color: #4f46e5;
@@ -147,6 +147,39 @@
             <label for="adminSecret">Admin Secret</label>
             <input type="password" id="adminSecret" placeholder="Enter your admin secret">
             <p class="help-text">The secret you created with `wrangler secret put ADMIN_SECRET`.</p>
+        </div>
+
+        <div class="container">
+            <h2>Configure Payment Gateway (BYOG)</h2>
+            <form id="configureGatewayForm">
+                <label for="gatewayProjectId">Project ID</label>
+                <input type="text" id="gatewayProjectId" placeholder="e.g., geminix" required>
+                <p class="help-text">The project these payment settings apply to.</p>
+
+                <label for="gatewayProvider">Gateway Provider</label>
+                <select id="gatewayProvider" name="gatewayProvider" required>
+                    <option value="razorpay">Razorpay</option>
+                </select>
+                <p class="help-text">Select the payment gateway you are using.</p>
+
+                <label for="gatewayApiKey">API Key</label>
+                <input type="text" id="gatewayApiKey" required>
+                <p class="help-text">Your API Key from the gateway's dashboard.</p>
+
+                <label for="gatewayApiSecret">API Secret</label>
+                <input type="password" id="gatewayApiSecret" required>
+                <p class="help-text">Your API Secret from the gateway's dashboard.</p>
+
+                <label for="gatewayWebhookSecret">Webhook Secret</label>
+                <input type="password" id="gatewayWebhookSecret" required>
+                <p class="help-text">The secret you configured for your webhook in the gateway's dashboard.</p>
+
+                <button type="submit">Save Gateway Configuration</button>
+            </form>
+            <div class="help-text" style="margin-top: 1rem;">
+                <p>After saving, you must configure your payment gateway to send `payment.captured` webhooks to the following URL:</p>
+                <pre id="webhookUrl" style="font-size: 0.8rem; padding: 0.5rem;"></pre>
+            </div>
         </div>
 
         <div class="container">
@@ -365,6 +398,29 @@
                 quotas: JSON.parse(e.target.trialQuotas.value)
             });
         });
+
+        document.getElementById('configureGatewayForm').addEventListener('submit', e => {
+            e.preventDefault();
+            apiCall('/admin/gateways/configure', {
+                projectId: e.target.gatewayProjectId.value,
+                provider: e.target.gatewayProvider.value,
+                apiKey: e.target.gatewayApiKey.value,
+                apiSecret: e.target.gatewayApiSecret.value,
+                webhookSecret: e.target.gatewayWebhookSecret.value
+            });
+        });
+
+        const displayWebhookUrl = () => {
+            const apiBase = document.getElementById('apiBase').value;
+            const projectId = document.getElementById('gatewayProjectId').value || 'YOUR_PROJECT_ID';
+            const provider = document.getElementById('gatewayProvider').value;
+            const webhookUrl = `${apiBase}/v1/payments/webhook/${provider}?projectId=${projectId}`;
+            document.getElementById('webhookUrl').textContent = webhookUrl;
+        };
+        document.getElementById('apiBase').addEventListener('input', displayWebhookUrl);
+        document.getElementById('gatewayProjectId').addEventListener('input', displayWebhookUrl);
+        document.getElementById('gatewayProvider').addEventListener('change', displayWebhookUrl);
+        displayWebhookUrl();
 
         document.getElementById('findUserForm').addEventListener('submit', e => {
             e.preventDefault();

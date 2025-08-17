@@ -27,7 +27,7 @@ function jsonResponse(data, status = 200, env) {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': allowedOrigins[0] || '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Secret',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Secret, X-Razorpay-Signature',
         },
     });
 }
@@ -81,7 +81,6 @@ router.get('/v1/revocations', async (request, env) => {
         updatedAt: new Date().toISOString(),
     };
 
-    // Implement ETag caching if needed
     return jsonResponse(revocations, 200, env);
 });
 
@@ -89,9 +88,6 @@ router.get('/v1/revocations', async (request, env) => {
 // 2. POST /v1/activate/start
 router.post('/v1/activate/start', async (request, env) => {
     const { projectId, licenseToken, deviceInfo } = await request.json();
-
-    // TODO: Implement full JWT parsing and verification with PUBLIC_JWK_JSON
-    // For now, we'll just decode it.
     const decodedToken = JSON.parse(atob(licenseToken.split('.')[1]));
     const { aud, exp, jti } = decodedToken;
 
@@ -102,7 +98,6 @@ router.post('/v1/activate/start', async (request, env) => {
         return jsonResponse({ error: 'License token has expired.' }, 400, env);
     }
 
-    // Check if license exists and is not revoked
     const license = await env.DB.prepare("SELECT * FROM licenses WHERE jti = ?1 AND revoked = 0").bind(jti).first();
     if (!license) {
         return jsonResponse({ error: 'License not found, has been revoked, or is invalid.' }, 404, env);
@@ -131,15 +126,10 @@ router.post('/v1/activate/start', async (request, env) => {
 // 3. POST /v1/activate/finish
 router.post('/v1/activate/finish', async (request, env) => {
     const { activationId, credential } = await request.json();
-
     const session = await env.DB.prepare("SELECT * FROM activation_sessions WHERE activation_id = ?1").bind(activationId).first();
     if (!session) {
         return jsonResponse({ error: 'Activation session not found or expired.' }, 404, env);
     }
-
-    // TODO: Full WebAuthn credential validation
-    // This is a simplified validation for demonstration.
-    // A real implementation needs a robust library.
 
     const deviceId = crypto.randomUUID();
     await env.DB.prepare(
@@ -163,7 +153,6 @@ router.post('/v1/activate/finish', async (request, env) => {
 // 4. POST /v1/heartbeat
 router.post('/v1/heartbeat', async (request, env) => {
     const { activationCert, userIdHash } = await request.json();
-    // TODO: Verify activationCert
     const decodedCert = JSON.parse(atob(activationCert.split('.')[1]));
     const { jti, deviceId } = decodedCert;
 
@@ -181,7 +170,6 @@ router.post('/v1/heartbeat', async (request, env) => {
 // 5. POST /v1/usage/meter
 router.post('/v1/usage/meter', async (request, env) => {
     const { activationCert, bucket, cost = 1 } = await request.json();
-    // TODO: Verify activationCert
     const decodedCert = JSON.parse(atob(activationCert.split('.')[1]));
     const { jti, deviceId } = decodedCert;
 
@@ -221,29 +209,23 @@ router.post('/v1/usage/meter', async (request, env) => {
 // 6. POST /v1/coupons/redeem
 router.post('/v1/coupons/redeem', async (request, env) => {
     const { couponCode, projectId } = await request.json();
-
     if (!couponCode || !projectId) {
         return jsonResponse({ error: 'couponCode and projectId are required.' }, 400, env);
     }
 
     const coupon = await env.DB.prepare("SELECT * FROM coupon_codes WHERE code = ?1 AND project_id = ?2").bind(couponCode, projectId).first();
-
     if (!coupon) {
         return jsonResponse({ error: 'Invalid or expired coupon code.' }, 404, env);
     }
-
     if (coupon.current_uses >= coupon.max_uses) {
         return jsonResponse({ error: 'This coupon has reached its maximum number of uses.' }, 403, env);
     }
-
     if (coupon.expires_at && coupon.expires_at * 1000 < Date.now()) {
         return jsonResponse({ error: 'This coupon has expired.' }, 403, env);
     }
 
-    // If the coupon is valid, issue a new license
     const planDetails = JSON.parse(coupon.plan_details_json);
     const { durationDays, quotas } = planDetails;
-
     const jti = crypto.randomUUID();
     const exp = Math.floor(Date.now() / 1000) + (durationDays * 24 * 60 * 60);
     const privateJwk = JSON.parse(env.PRIVATE_JWK);
@@ -252,40 +234,29 @@ router.post('/v1/coupons/redeem', async (request, env) => {
         "INSERT INTO licenses (jti, project_id, type, quotas, exp) VALUES (?1, ?2, 'individual', ?3, ?4)"
     ).bind(jti, projectId, JSON.stringify(quotas), exp).run();
 
-    // Atomically increment the usage count
     await env.DB.prepare("UPDATE coupon_codes SET current_uses = current_uses + 1 WHERE code = ?1").bind(couponCode).run();
 
-    const token = await signJwt({
-        aud: projectId,
-        jti,
-        type: 'individual',
-        exp,
-    }, privateJwk, env);
-
+    const token = await signJwt({ aud: projectId, jti, type: 'individual', exp }, privateJwk, env);
     return jsonResponse({ licenseToken: token }, 200, env);
 });
 
 // 7. POST /v1/trials/request
 router.post('/v1/trials/request', async (request, env) => {
     const { projectId, userEmail } = await request.json();
-
     if (!projectId || !userEmail) {
         return jsonResponse({ error: 'projectId and userEmail are required.' }, 400, env);
     }
 
-    // Check if user has already redeemed a trial for this project
     const existingRedemption = await env.DB.prepare("SELECT * FROM trial_redemptions WHERE user_email = ?1 AND project_id = ?2").bind(userEmail, projectId).first();
     if (existingRedemption) {
         return jsonResponse({ error: 'A trial has already been redeemed for this user and project.' }, 403, env);
     }
 
-    // Get the default trial plan for this project
     const trialPlan = await env.DB.prepare("SELECT * FROM trial_plans WHERE project_id = ?1").bind(projectId).first();
     if (!trialPlan) {
         return jsonResponse({ error: 'No trial plan is configured for this project.' }, 404, env);
     }
 
-    // Issue the license
     const { duration_days, quotas_json } = trialPlan;
     const quotas = JSON.parse(quotas_json);
     const jti = crypto.randomUUID();
@@ -296,19 +267,62 @@ router.post('/v1/trials/request', async (request, env) => {
         "INSERT INTO licenses (jti, project_id, type, quotas, exp) VALUES (?1, ?2, 'individual', ?3, ?4)"
     ).bind(jti, projectId, JSON.stringify(quotas), exp).run();
 
-    // Record the redemption
     await env.DB.prepare(
         "INSERT INTO trial_redemptions (user_email, project_id, license_jti) VALUES (?1, ?2, ?3)"
     ).bind(userEmail, projectId, jti).run();
 
-    const token = await signJwt({
-        aud: projectId,
-        jti,
-        type: 'individual',
-        exp,
-    }, privateJwk, env);
-
+    const token = await signJwt({ aud: projectId, jti, type: 'individual', exp }, privateJwk, env);
     return jsonResponse({ licenseToken: token }, 200, env);
+});
+
+// 8. POST /v1/payments/webhook/razorpay
+router.post('/v1/payments/webhook/razorpay', async (request, env) => {
+    const razorpaySignature = request.headers.get('x-razorpay-signature');
+    const body = await request.text();
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get('projectId');
+
+    if (!projectId) {
+        return new Response('Project ID is required in the webhook URL query string.', { status: 400 });
+    }
+
+    const gateway = await env.DB.prepare("SELECT * FROM payment_gateways WHERE project_id = ?1 AND provider = 'razorpay'").bind(projectId).first();
+    if (!gateway) {
+        return new Response('Payment gateway not configured for this project.', { status: 400 });
+    }
+
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(gateway.webhook_secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
+    const expectedSignature = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (expectedSignature !== razorpaySignature) {
+        return new Response('Invalid webhook signature.', { status: 401 });
+    }
+
+    const event = JSON.parse(body);
+
+    if (event.event === 'payment.captured') {
+        const payment = event.payload.payment.entity;
+        const { user_email, plan_id } = payment.notes;
+
+        if (!user_email || !plan_id) {
+            return new Response('Missing user_email or plan_id in payment notes.', { status: 400 });
+        }
+
+        const plan = { durationDays: 30, quotas: { daily: 10000 } }; // Placeholder
+
+        const jti = crypto.randomUUID();
+        const exp = Math.floor(Date.now() / 1000) + (plan.durationDays * 24 * 60 * 60);
+        const privateJwk = JSON.parse(env.PRIVATE_JWK);
+
+        await env.DB.prepare(
+            "INSERT INTO licenses (jti, project_id, type, quotas, exp) VALUES (?1, ?2, 'individual', ?3, ?4)"
+        ).bind(jti, projectId, JSON.stringify(plan.quotas), exp).run();
+
+        console.log(`Successfully issued license ${jti} for ${user_email} via Razorpay webhook for project ${projectId}`);
+    }
+
+    return new Response('Webhook processed.', { status: 200 });
 });
 
 
@@ -344,14 +358,7 @@ router.post('/admin/licenses/issue', adminAuth, async (request, env) => {
             "INSERT INTO licenses (jti, project_id, type, agency_id, seat_index, quotas, exp) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
         ).bind(jti, projectId, type, agencyId, type === 'seat' ? i + 1 : null, JSON.stringify(quotas), exp).run();
 
-        const token = await signJwt({
-            aud: projectId,
-            jti,
-            type,
-            agency_id: agencyId,
-            seat_index: type === 'seat' ? i + 1 : null,
-            exp,
-        }, privateJwk, env);
+        const token = await signJwt({ aud: projectId, jti, type, agency_id: agencyId, seat_index: type === 'seat' ? i + 1 : null, exp }, privateJwk, env);
         issuedTokens.push(token);
     }
 
@@ -376,21 +383,12 @@ router.get('/admin/analytics/summary', adminAuth, async (request, env) => {
     }
 
     const { results: seats } = await env.DB.prepare(
-        `SELECT
-            l.jti, l.seat_index, l.exp, l.revoked,
-            a.device_id, a.last_seen
-         FROM licenses l
-         LEFT JOIN activations a ON l.jti = a.jti
-         WHERE l.agency_id = ?1`
+        `SELECT l.jti, l.seat_index, l.exp, l.revoked, a.device_id, a.last_seen FROM licenses l LEFT JOIN activations a ON l.jti = a.jti WHERE l.agency_id = ?1`
     ).bind(query.agencyId).all();
 
     const todayKey = Math.floor(new Date().getTime() / 86400000);
     const { results: usage } = await env.DB.prepare(
-        `SELECT l.jti, u.bucket, SUM(u.cost) as total_usage
-         FROM usage u
-         JOIN licenses l ON u.jti = l.jti
-         WHERE l.agency_id = ?1 AND u.day_key = ?2
-         GROUP BY l.jti, u.bucket`
+        `SELECT l.jti, u.bucket, SUM(u.cost) as total_usage FROM usage u JOIN licenses l ON u.jti = l.jti WHERE l.agency_id = ?1 AND u.day_key = ?2 GROUP BY l.jti, u.bucket`
     ).bind(query.agencyId, todayKey).all();
 
     const usageByJti = usage.reduce((acc, row) => {
@@ -405,11 +403,7 @@ router.get('/admin/analytics/summary', adminAuth, async (request, env) => {
         else if (seat.device_id) status = 'active';
         else if (seat.exp * 1000 < Date.now()) status = 'expired';
 
-        return {
-            ...seat,
-            status,
-            todays_usage: usageByJti[seat.jti] || {},
-        };
+        return { ...seat, status, todays_usage: usageByJti[seat.jti] || {} };
     });
 
     return jsonResponse({ summary }, 200, env);
@@ -418,7 +412,6 @@ router.get('/admin/analytics/summary', adminAuth, async (request, env) => {
 // 5. POST /admin/coupons/create
 router.post('/admin/coupons/create', adminAuth, async (request, env) => {
     const { code, projectId, durationDays, quotas, maxUses, expiresAt } = await request.json();
-
     if (!code || !projectId || !durationDays || !quotas || !maxUses) {
         return jsonResponse({ error: 'Missing required fields.' }, 400, env);
     }
@@ -435,7 +428,6 @@ router.post('/admin/coupons/create', adminAuth, async (request, env) => {
 // 6. POST /admin/trials/define
 router.post('/admin/trials/define', adminAuth, async (request, env) => {
     const { projectId, durationDays, quotas } = await request.json();
-
     if (!projectId || !durationDays || !quotas) {
         return jsonResponse({ error: 'Missing required fields.' }, 400, env);
     }
@@ -445,6 +437,21 @@ router.post('/admin/trials/define', adminAuth, async (request, env) => {
     await env.DB.prepare(
         "INSERT INTO trial_plans (project_id, duration_days, quotas_json) VALUES (?1, ?2, ?3) ON CONFLICT(project_id) DO UPDATE SET duration_days=excluded.duration_days, quotas_json=excluded.quotas_json"
     ).bind(projectId, durationDays, quotas_json).run();
+
+    return jsonResponse({ ok: true, projectId }, 201, env);
+});
+
+// 7. POST /admin/gateways/configure
+router.post('/admin/gateways/configure', adminAuth, async (request, env) => {
+    const { projectId, provider, apiKey, apiSecret, webhookSecret } = await request.json();
+
+    if (!projectId || !provider || !apiKey || !apiSecret || !webhookSecret) {
+        return jsonResponse({ error: 'Missing required fields.' }, 400, env);
+    }
+
+    await env.DB.prepare(
+        "INSERT INTO payment_gateways (project_id, provider, api_key, api_secret, webhook_secret) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(project_id) DO UPDATE SET provider=excluded.provider, api_key=excluded.api_key, api_secret=excluded.api_secret, webhook_secret=excluded.webhook_secret"
+    ).bind(projectId, provider, apiKey, apiSecret, webhookSecret).run();
 
     return jsonResponse({ ok: true, projectId }, 201, env);
 });

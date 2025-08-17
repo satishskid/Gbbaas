@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS agencies;
 DROP TABLE IF EXISTS coupon_codes;
 DROP TABLE IF EXISTS trial_plans;
 DROP TABLE IF EXISTS trial_redemptions;
+DROP TABLE IF EXISTS payment_gateways;
 
 CREATE TABLE agencies (
     agency_id TEXT PRIMARY KEY,
@@ -93,4 +94,13 @@ CREATE TABLE trial_redemptions (
     license_jti TEXT NOT NULL,
     redeemed_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     PRIMARY KEY (user_email, project_id)
+);
+
+-- Stores payment gateway configurations for projects
+CREATE TABLE payment_gateways (
+    project_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL, -- e.g., 'razorpay'
+    api_key TEXT NOT NULL,
+    api_secret TEXT NOT NULL,
+    webhook_secret TEXT NOT NULL
 );
