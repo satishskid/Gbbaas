@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gb-Baas Developer Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --background-color: #f8fafc;
+            --container-bg: #ffffff;
+            --text-color: #334155;
+            --label-color: #475569;
+            --border-color: #e2e8f0;
+            --input-focus-border: #a5b4fc;
+            --help-text-color: #64748b;
+            --white: #fff;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        body { font-family: 'Inter', sans-serif; line-height: 1.6; padding: 2rem; color: var(--text-color); background-color: var(--background-color); }
+        main { max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 2.25rem; font-weight: 700; color: #1e293b; }
+        h2 { font-size: 1.5rem; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-top: 2.5rem; margin-bottom: 1.5rem; }
+        .container { background: var(--container-bg); padding: 1.5rem 2rem; border-radius: 0.75rem; margin-bottom: 1.5rem; border: 1px solid var(--border-color); box-shadow: var(--shadow); }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--label-color); }
+        input { width: 100%; padding: 0.75rem 1rem; margin-bottom: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border-color); }
+        button { background: var(--primary-color); color: var(--white); padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; font-size: 1rem; }
+        button:hover { background: var(--primary-hover); }
+        .hidden { display: none; }
+        #project-list { list-style-type: none; padding: 0; }
+        #project-list li { background: #f8fafc; padding: 1rem 1.5rem; border-radius: 0.5rem; margin-bottom: 1rem; border: 1px solid var(--border-color); }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Developer Dashboard</h1>
+        
+        <div id="login-view" class="container">
+            <h2>Welcome</h2>
+            <p>Sign in to manage your applications.</p>
+            <button id="login-btn">Sign In with Google</button>
+        </div>
+
+        <div id="dashboard-view" class="hidden">
+            <h2 id="welcome-message"></h2>
+            
+            <div class="container">
+                <h3>Your Projects</h3>
+                <ul id="project-list"></ul>
+            </div>
+
+            <div class="container">
+                <h3>Create New Project</h3>
+                <form id="create-project-form">
+                    <label for="projectName">Project Name</label>
+                    <input type="text" id="projectName" required placeholder="e.g., My Awesome App">
+                    <button type="submit">Create Project</button>
+                </form>
+            </div>
+             <button id="logout-btn">Logout</button>
+        </div>
+    </main>
+
+    <script>
+        const apiBase = 'https://baas-api.satish-9f4.workers.dev'; // This should be dynamic in a real app
+        const loginView = document.getElementById('login-view');
+        const dashboardView = document.getElementById('dashboard-view');
+
+        function getToken() {
+            return localStorage.getItem('developer_session_token');
+        }
+
+        function setToken(token) {
+            localStorage.setItem('developer_session_token', token);
+        }
+
+        function logout() {
+            localStorage.removeItem('developer_session_token');
+            showLoginView();
+        }
+
+        function showLoginView() {
+            loginView.classList.remove('hidden');
+            dashboardView.classList.add('hidden');
+        }
+
+        async function showDashboardView() {
+            const token = getToken();
+            if (!token) {
+                showLoginView();
+                return;
+            }
+
+            // TODO: Verify token is not expired before showing dashboard
+            const developer = JSON.parse(atob(token.split('.')[1]));
+            document.getElementById('welcome-message').textContent = `Welcome, ${developer.name}`;
+            
+            loginView.classList.add('hidden');
+            dashboardView.classList.remove('hidden');
+            await loadProjects();
+        }
+
+        async function loadProjects() {
+            const response = await fetch(`${apiBase}/api/v1/developer/projects`, {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+            const projects = await response.json();
+            const projectList = document.getElementById('project-list');
+            projectList.innerHTML = '';
+            if (projects.length === 0) {
+                projectList.innerHTML = '<li>You have no projects yet.</li>';
+            }
+            projects.forEach(project => {
+                const li = document.createElement('li');
+                li.innerHTML = `<strong>${project.name}</strong><br><small>ID: ${project.id}</small>`;
+                projectList.appendChild(li);
+            });
+        }
+
+        document.getElementById('login-btn').addEventListener('click', () => {
+            window.location.href = `${apiBase}/auth/developer/login/google`;
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', logout);
+
+        document.getElementById('create-project-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const projectName = document.getElementById('projectName').value;
+            const response = await fetch(`${apiBase}/api/v1/developer/projects', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getToken()}`
+                },
+                body: JSON.stringify({ name: projectName })
+            });
+            if (response.ok) {
+                document.getElementById('projectName').value = '';
+                await loadProjects();
+            } else {
+                alert('Failed to create project.');
+            }
+        });
+
+        // On page load, check for token from redirect
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token'); // This needs to match the redirect from the worker
+
+        if (tokenFromUrl) {
+            setToken(tokenFromUrl);
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            showDashboardView();
+        } else {
+            showDashboardView();
+        }
+
+    </script>
+</body>
+</html>
