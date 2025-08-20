@@ -90,10 +90,44 @@ router.get('/auth/developer/callback/google', async (request, env) => {
         exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     }, privateJwk);
 
-    // TODO: Redirect to the developer dashboard with the token
-    return jsonResponse({ message: "Login successful!", sessionToken }, 200, env);
+    const developerDashboardUrl = new URL(`${env.PUBLIC_BASE_URL}/apps/developer-dashboard/index.html`);
+    developerDashboardUrl.searchParams.set('token', sessionToken);
+    return Response.redirect(developerDashboardUrl.toString(), 302);
 });
 
+
+async function verifyJwt(token, publicJwk) {
+    try {
+        const [headerB64, payloadB64, signatureB64] = token.split('.');
+        const header = JSON.parse(atob(headerB64));
+        const payload = JSON.parse(atob(payloadB64));
+
+        // Check algorithm
+        if (header.alg !== 'RS256') {
+            throw new Error('Unsupported JWT algorithm');
+        }
+
+        // Check expiration
+        if (payload.exp * 1000 < Date.now()) {
+            throw new Error('Token has expired');
+        }
+
+        const key = await crypto.subtle.importKey('jwk', publicJwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+        const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+        const signature = new Uint8Array(atob(signatureB64.replace(/_/g, '/').replace(/-/g, '+')).split('').map(c => c.charCodeAt(0)));
+
+        const isValid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, signature, data);
+
+        if (!isValid) {
+            throw new Error('Invalid signature');
+        }
+
+        return payload;
+    } catch (e) {
+        console.error("JWT Verification Error:", e.message);
+        return null;
+    }
+}
 
 // --- DEVELOPER API ENDPOINTS (Require Developer JWT) ---
 
@@ -104,11 +138,13 @@ const developerAuth = async (request, env) => {
     }
     const token = authHeader.substring(7);
     try {
-        // TODO: Implement full JWT verification using PUBLIC_JWK_JSON
-        const decoded = JSON.parse(atob(token.split('.')[1]));
-        if (decoded.exp < Date.now() / 1000) {
-            return jsonResponse({ error: 'Token expired' }, 401, env);
+        const publicJwk = JSON.parse(env.PUBLIC_JWK_JSON);
+        const decoded = await verifyJwt(token, publicJwk);
+
+        if (!decoded) {
+            return jsonResponse({ error: 'Invalid or expired token' }, 401, env);
         }
+
         request.developer = decoded; // Attach developer info to the request
     } catch (e) {
         return jsonResponse({ error: 'Invalid token' }, 401, env);
@@ -133,9 +169,41 @@ router.get('/api/v1/developer/projects', developerAuth, async (request, env) => 
     return jsonResponse(results, 200, env);
 });
 
+// --- ADMIN ENDPOINT: Find User by Email or JTI ---
+router.post('/admin/users/find', async (request, env) => {
+    const secret = request.headers.get('X-Admin-Secret');
+    if (!secret || secret !== env.ADMIN_SECRET) {
+        return jsonResponse({ error: 'Forbidden' }, 403, env);
+    }
+    const { userEmail, jti } = await request.json();
+    let result = {};
+    if (userEmail) {
+        // Find trial redemption
+        const trial = await env.DB.prepare("SELECT * FROM trial_redemptions WHERE user_email = ?1").bind(userEmail).first();
+        if (trial) {
+            result.trial = trial;
+            // Find license
+            const license = await env.DB.prepare("SELECT * FROM licenses WHERE jti = ?1").bind(trial.license_jti).first();
+            if (license) result.license = license;
+        }
+        // Find all licenses issued to this email (if any)
+        const licenses = await env.DB.prepare("SELECT * FROM licenses WHERE quotas LIKE ?1").bind(`%${userEmail}%`).all();
+        if (licenses.results.length) result.licenses = licenses.results;
+    }
+    if (jti) {
+        const license = await env.DB.prepare("SELECT * FROM licenses WHERE jti = ?1").bind(jti).first();
+        if (license) result.license = license;
+        // Find activations
+        const activations = await env.DB.prepare("SELECT * FROM activations WHERE jti = ?1").bind(jti).all();
+        if (activations.results.length) result.activations = activations.results;
+        // Find usage
+        const usage = await env.DB.prepare("SELECT * FROM usage WHERE jti = ?1 ORDER BY ts DESC LIMIT 100").bind(jti).all();
+        if (usage.results.length) result.usage = usage.results;
+    }
+    return jsonResponse(result, 200, env);
+});
 
 // ... (All previous public and admin endpoints remain here) ...
-
 
 // Catch-all for 404s
 router.all('*', () => new Response('Not Found.', { status: 404 }));

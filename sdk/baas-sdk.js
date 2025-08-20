@@ -9,11 +9,11 @@
 
 const BAAS = (() => {
     // --- SDK Configuration ---
-    // TODO: This public key should be replaced during the build process or configured dynamically.
-    const PUBLIC_JWK = {"kty":"RSA","n":"ril6_Su4sI7PUnXDQaUE1a8Yobc3SZYjGkGxhps0HnC89UHJNRIpBA17w2aY0p9IgAeTyF9JHjcfPEvzqTw7xWDSh86rjbiMnRG70tTc2c3l2E0v-wYoqVBcMMXBrXsptuCTqKd82l1_Qnyri_hXL4E5AA0_eRS8mhIY1A5Xd8T1YcIeeIHA2E0JnZ58ujLE2yx01LFF72oB2xvRZst9WMqQNBDhhUGVUUyIvtl6-pvVewupxrkwY4KniuluqLOyvCmTaPALUltvFKM4oW_zuAJ7nq0jcGUmBWsreB6Tc9wJ4EhLTbb7sVkECMNbCxQnGvMs0UiuZA26Mm56yIG0YQ","e":"AQAB"};
+    // This public key should be replaced during the build process or configured dynamically.
+    const PUBLIC_JWK = "__PUBLIC_JWK__"; // Placeholder for dynamic configuration
 
     let config = {
-        apiBase: 'https://baas-api.satish-9f4.workers.dev', // <-- REPLACE THIS
+        apiBase: '__API_BASE_URL__', // Placeholder for dynamic configuration
         projectId: null,
         ui: 'headless', // or 'prompt'
         onRequestLicense: async () => { throw new Error('onRequestLicense not configured'); },
@@ -37,9 +37,9 @@ const BAAS = (() => {
     const base64UrlToUint8Array = (str) => new Uint8Array(atob(str.replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
 
     async function verifyJwt(token) {
-        // Simplified JWT verification. A more robust solution would use a library.
         try {
             const [headerB64, payloadB64, signatureB64] = token.split('.');
+            const header = JSON.parse(atob(headerB64));
             const payload = JSON.parse(atob(payloadB64));
 
             // Check expiration
@@ -53,7 +53,24 @@ const BAAS = (() => {
                 return null;
             }
 
-            // TODO: Add full signature verification using PUBLIC_JWK
+            // Full signature verification using PUBLIC_JWK
+            const key = await crypto.subtle.importKey(
+                'jwk',
+                JSON.parse(PUBLIC_JWK),
+                { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+                false,
+                ['verify']
+            );
+            const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+            const signature = base64UrlToUint8Array(signatureB64);
+
+            const isValid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, signature, data);
+
+            if (!isValid) {
+                console.error("BAAS Error: Invalid JWT signature.");
+                return null;
+            }
+
             return payload;
         } catch (e) {
             console.error("BAAS Error: Invalid JWT", e);

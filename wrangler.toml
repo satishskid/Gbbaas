@@ -9,5 +9,5 @@ database_name = "baas-db"
 database_id = "e1ac45c9-fe10-4a08-8ca6-6e83be14b74b"
 
 [vars]
-PUBLIC_BASE_URL = "https://baas-api.satish-9f4.workers.dev" # <-- TODO: Replace with your worker URL
-ALLOWED_ORIGINS = "http://localhost:3000,https://your-app.com" # <-- TODO: Replace with your app's origins
+PUBLIC_BASE_URL = "__YOUR_WORKER_URL__" # TODO: Replace with your worker URL
+ALLOWED_ORIGINS = "__YOUR_APP_ORIGINS__" # TODO: Replace with your app's origins (comma-separated)
